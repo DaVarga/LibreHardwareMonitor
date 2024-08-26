@@ -18,70 +18,99 @@ internal class NvidiaGroup : IGroup
 
     public NvidiaGroup(ISettings settings)
     {
-        if (!NvApi.IsAvailable)
-            return;
-
-        _report.AppendLine("NvApi");
-        _report.AppendLine();
-
-        if (NvApi.NvAPI_GetInterfaceVersionString(out string version) == NvApi.NvStatus.OK)
+        if (NvApi.IsAvailable)
         {
-            _report.Append("Version: ");
-            _report.AppendLine(version);
-        }
 
-        NvApi.NvPhysicalGpuHandle[] handles = new NvApi.NvPhysicalGpuHandle[NvApi.MAX_PHYSICAL_GPUS];
-        if (NvApi.NvAPI_EnumPhysicalGPUs == null)
-        {
-            _report.AppendLine("Error: NvAPI_EnumPhysicalGPUs not available");
+
+            _report.AppendLine("NvApi");
             _report.AppendLine();
-            return;
-        }
 
-        NvApi.NvStatus status = NvApi.NvAPI_EnumPhysicalGPUs(handles, out int count);
-        if (status != NvApi.NvStatus.OK)
-        {
-            _report.AppendLine("Status: " + status);
-            _report.AppendLine();
-            return;
-        }
-
-        IDictionary<NvApi.NvPhysicalGpuHandle, NvApi.NvDisplayHandle> displayHandles = new Dictionary<NvApi.NvPhysicalGpuHandle, NvApi.NvDisplayHandle>();
-        if (NvApi.NvAPI_EnumNvidiaDisplayHandle != null && NvApi.NvAPI_GetPhysicalGPUsFromDisplay != null)
-        {
-            status = NvApi.NvStatus.OK;
-            int i = 0;
-            while (status == NvApi.NvStatus.OK)
+            if (NvApi.NvAPI_GetInterfaceVersionString(out string version) == NvApi.NvStatus.OK)
             {
-                NvApi.NvDisplayHandle displayHandle = new();
-                status = NvApi.NvAPI_EnumNvidiaDisplayHandle(i, ref displayHandle);
-                i++;
+                _report.Append("Version: ");
+                _report.AppendLine(version);
+            }
 
-                if (status == NvApi.NvStatus.OK)
+            NvApi.NvPhysicalGpuHandle[] handles = new NvApi.NvPhysicalGpuHandle[NvApi.MAX_PHYSICAL_GPUS];
+            if (NvApi.NvAPI_EnumPhysicalGPUs == null)
+            {
+                _report.AppendLine("Error: NvAPI_EnumPhysicalGPUs not available");
+                _report.AppendLine();
+                return;
+            }
+
+            NvApi.NvStatus status = NvApi.NvAPI_EnumPhysicalGPUs(handles, out int count);
+            if (status != NvApi.NvStatus.OK)
+            {
+                _report.AppendLine("Status: " + status);
+                _report.AppendLine();
+                return;
+            }
+
+            IDictionary<NvApi.NvPhysicalGpuHandle, NvApi.NvDisplayHandle> displayHandles = new Dictionary<NvApi.NvPhysicalGpuHandle, NvApi.NvDisplayHandle>();
+            if (NvApi.NvAPI_EnumNvidiaDisplayHandle != null && NvApi.NvAPI_GetPhysicalGPUsFromDisplay != null)
+            {
+                status = NvApi.NvStatus.OK;
+                int i = 0;
+                while (status == NvApi.NvStatus.OK)
                 {
-                    NvApi.NvPhysicalGpuHandle[] handlesFromDisplay = new NvApi.NvPhysicalGpuHandle[NvApi.MAX_PHYSICAL_GPUS];
-                    if (NvApi.NvAPI_GetPhysicalGPUsFromDisplay(displayHandle, handlesFromDisplay, out uint countFromDisplay) == NvApi.NvStatus.OK)
+                    NvApi.NvDisplayHandle displayHandle = new();
+                    status = NvApi.NvAPI_EnumNvidiaDisplayHandle(i, ref displayHandle);
+                    i++;
+
+                    if (status == NvApi.NvStatus.OK)
                     {
-                        for (int j = 0; j < countFromDisplay; j++)
+                        NvApi.NvPhysicalGpuHandle[] handlesFromDisplay = new NvApi.NvPhysicalGpuHandle[NvApi.MAX_PHYSICAL_GPUS];
+                        if (NvApi.NvAPI_GetPhysicalGPUsFromDisplay(displayHandle, handlesFromDisplay, out uint countFromDisplay) == NvApi.NvStatus.OK)
                         {
-                            if (!displayHandles.ContainsKey(handlesFromDisplay[j]))
-                                displayHandles.Add(handlesFromDisplay[j], displayHandle);
+                            for (int j = 0; j < countFromDisplay; j++)
+                            {
+                                if (!displayHandles.ContainsKey(handlesFromDisplay[j]))
+                                    displayHandles.Add(handlesFromDisplay[j], displayHandle);
+                            }
                         }
                     }
                 }
             }
+
+            _report.Append("Number of GPUs: ");
+            _report.AppendLine(count.ToString(CultureInfo.InvariantCulture));
+
+            for (int i = 0; i < count; i++)
+            {
+                displayHandles.TryGetValue(handles[i], out NvApi.NvDisplayHandle displayHandle);
+                _hardware.Add(new NvidiaGpu(i, handles[i], displayHandle, settings));
+            }
+
+            _report.AppendLine();
         }
-
-        _report.Append("Number of GPUs: ");
-        _report.AppendLine(count.ToString(CultureInfo.InvariantCulture));
-
-        for (int i = 0; i < count; i++)
+        else if (NvidiaML.IsAvailable || NvidiaML.Initialize())
         {
-            displayHandles.TryGetValue(handles[i], out NvApi.NvDisplayHandle displayHandle);
-            _hardware.Add(new NvidiaGpu(i, handles[i], displayHandle, settings));
-        }
 
-        _report.AppendLine();
+            IList<NvidiaML.NvmlDevice> deviceHandles = new List<NvidiaML.NvmlDevice>();
+
+            for (int i = 0; NvidiaML.NvmlDeviceGetHandleByIndex(i) != null; i++)
+            {
+                deviceHandles.Add((NvidiaML.NvmlDevice)NvidiaML.NvmlDeviceGetHandleByIndex(i));
+            }
+
+            if (deviceHandles.Count == 0)
+            {
+                return;
+            }
+            _report.AppendLine("NvidiaML");
+            _report.AppendLine();
+
+            _report.Append("Number of GPUs: ");
+            _report.AppendLine(deviceHandles.Count.ToString(CultureInfo.InvariantCulture));
+
+            for (int i = 0; i < deviceHandles.Count; i++)
+            {
+                _hardware.Add(new NvidiaMlGpu(i, deviceHandles[i], settings));
+            }
+
+            _report.AppendLine();
+        }
     }
 
     public IReadOnlyList<IHardware> Hardware => _hardware;
