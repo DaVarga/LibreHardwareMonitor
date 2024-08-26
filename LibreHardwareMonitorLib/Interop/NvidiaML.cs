@@ -6,6 +6,7 @@
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace LibreHardwareMonitor.Interop;
 
@@ -30,6 +31,18 @@ internal static class NvidiaML
     {
         TxBytes = 0,
         RxBytes = 1
+    }
+
+    public enum NvmlTemperatureSensors
+    {
+        TemperatureGpu = 0,
+    }
+    public enum NvmlClockType
+    {
+        Gpu = 0,
+        Sm = 1,
+        Memory = 2,
+        Video = 3,
     }
 
     public enum NvmlReturn
@@ -406,6 +419,99 @@ internal static class NvidiaML
         return null;
     }
 
+
+    public static int? NvmlDeviceGetCount()
+    {
+        if (IsAvailable)
+        {
+            int count;
+            if (Software.OperatingSystem.IsUnix)
+            {
+                if (nvmlDeviceGetCount(out count) == NvmlReturn.Success)
+                    return count;
+            }
+            else
+            {
+                throw new NotImplementedException();
+            }
+        }
+
+        return null;
+    }
+    public static int? NvmlDeviceGetGpuTemperature(NvmlDevice nvmlDevice)
+    {
+        if (IsAvailable)
+        {
+            int temp;
+            if (Software.OperatingSystem.IsUnix)
+            {
+                if (nvmlDeviceGetTemperature(nvmlDevice, NvmlTemperatureSensors.TemperatureGpu, out temp) == NvmlReturn.Success)
+                    return temp;
+            }
+            else
+            {
+                throw new NotImplementedException();
+            }
+        }
+
+        return null;
+    }
+    public static int? NvmlDeviceGetClockInfo(NvmlDevice nvmlDevice, NvmlClockType type)
+    {
+        if (IsAvailable)
+        {
+            int clock;
+            if (Software.OperatingSystem.IsUnix)
+            {
+                if (nvmlDeviceGetClockInfo(nvmlDevice, type, out clock) == NvmlReturn.Success)
+                    return clock;
+            }
+            else
+            {
+                throw new NotImplementedException();
+            }
+        }
+
+        return null;
+    }
+    public static NvmlUtilization? NvmlDeviceGetUtilizationRates(NvmlDevice nvmlDevice)
+    {
+        if (IsAvailable)
+        {
+            var util = new NvmlUtilization();
+            if (Software.OperatingSystem.IsUnix)
+            {
+                if (nvmlDeviceGetUtilizationRates(nvmlDevice, out util) == NvmlReturn.Success)
+                    return util;
+            }
+            else
+            {
+                throw new NotImplementedException();
+            }
+        }
+
+        return null;
+    }
+
+    public static string NvmlDeviceGetName(NvmlDevice nvmlDevice)
+    {
+        if (IsAvailable)
+        {
+            StringBuilder name = new StringBuilder();
+            if (Software.OperatingSystem.IsUnix)
+            {
+                if (nvmlDeviceGetName(nvmlDevice, name, 96) == NvmlReturn.Success)
+                    return name.ToString();
+            }
+            else
+            {
+                throw new NotImplementedException();
+            }
+        }
+
+        return string.Empty;
+    }
+
     [DllImport(LinuxDllName, EntryPoint = "nvmlInit_v2", ExactSpelling = true)]
     private static extern NvmlReturn nvmlInit();
 
@@ -433,6 +539,21 @@ internal static class NvidiaML
     [DllImport(LinuxDllName, EntryPoint = "nvmlDeviceGetPciInfo_v2")]
     private static extern NvmlReturn nvmlDeviceGetPciInfo(NvmlDevice device, ref NvmlPciInfo pci);
 
+    [DllImport(LinuxDllName, EntryPoint = "nvmlDeviceGetCount_v2", ExactSpelling = true)]
+    private static extern NvmlReturn nvmlDeviceGetCount(out int deviceCount);
+
+    [DllImport(LinuxDllName, EntryPoint = "nvmlDeviceGetTemperature", ExactSpelling = true)]
+    private static extern NvmlReturn nvmlDeviceGetTemperature(NvmlDevice device, NvmlTemperatureSensors sensor, out int temp);
+
+    [DllImport(LinuxDllName, EntryPoint = "nvmlDeviceGetClockInfo", ExactSpelling = true)]
+    private static extern NvmlReturn nvmlDeviceGetClockInfo(NvmlDevice device, NvmlClockType type, out int clock);
+
+    [DllImport(LinuxDllName, EntryPoint = "nvmlDeviceGetUtilizationRates", ExactSpelling = true)]
+    private static extern NvmlReturn nvmlDeviceGetUtilizationRates(NvmlDevice device, out NvmlUtilization utilization);
+
+    [DllImport(LinuxDllName, EntryPoint = "nvmlDeviceGetName", ExactSpelling = true)]
+    private static extern NvmlReturn nvmlDeviceGetName(NvmlDevice device, StringBuilder name, int nameLen);
+
     private delegate NvmlReturn WindowsNvmlDelegate();
 
     private delegate NvmlReturn WindowsNvmlGetHandleDelegate(int index, out NvmlDevice device);
@@ -449,6 +570,15 @@ internal static class NvidiaML
     public struct NvmlDevice
     {
         public IntPtr Handle;
+    }
+
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct NvmlUtilization
+    {
+        public uint gpu;
+
+        public uint memory;
     }
 
     [StructLayout(LayoutKind.Sequential)]
